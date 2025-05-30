@@ -1,158 +1,114 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const { MongoClient } = require('mongodb');
-const multer = require('multer');
+const mongoose = require('mongoose');
 const cors = require('cors');
-const { OAuth2Client } = require('google-auth-library');
-const path = require('path');
-const fs = require('fs');
+const dotenv = require('dotenv');
+const http = require('http');
+const socketIo = require('socket.io');
 
+// 환경변수 로드
+dotenv.config();
+
+// Express 앱 생성
 const app = express();
-
-// Google OAuth 클라이언트
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
-// MongoDB 연결
-const mongoUrl = 'mongodb://127.0.0.1:27017/bangtori';
-let db;
-
-MongoClient.connect(mongoUrl).then(mongoClient => {
-  console.log('MongoDB 연결 성공');
-  db = mongoClient.db();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    methods: ["GET", "POST", "PUT", "DELETE"]
+  }
 });
-
-// 업로드 폴더 생성
-const uploadDir = 'uploads';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
 
 // 미들웨어
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  credentials: true
+}));
 app.use(express.json());
-app.use('/uploads', express.static('uploads')); // 이미지 정적 서빙
+app.use(express.urlencoded({ extended: true }));
 
-// 파일 업로드 설정 (로컬 저장)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`);
-  }
-});
-const upload = multer({ storage });
+// 데이터베이스 연결
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/bangtori', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('✅ MongoDB 연결 성공'))
+.catch(err => console.error('❌ MongoDB 연결 실패:', err));
 
-// JWT 토큰 검증 미들웨어
-const verifyToken = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) {
-    return res.status(401).json({ error: '토큰이 필요합니다' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    res.status(401).json({ error: '유효하지 않은 토큰' });
-  }
-};
-
-// Google 로그인
-app.post('/api/login', async (req, res) => {
-  try {
-    const { idToken } = req.body;
-    
-    // Google ID 토큰 검증
-    const ticket = await client.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-    
-    const payload = ticket.getPayload();
-    const { sub: googleId, email, name, picture } = payload;
-    
-    // JWT 토큰 생성
-    const token = jwt.sign(
-      { googleId, email, name },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-    
-    // 사용자 정보 DB에 저장 (처음 로그인시)
-    await db.collection('users').updateOne(
-      { googleId },
-      { 
-        $set: { 
-          email, 
-          googleName: name,
-          googlePicture: picture,
-          lastLogin: new Date() 
-        } 
-      },
-      { upsert: true }
-    );
-    
-    res.json({ token, user: { googleId, email, name } });
-  } catch (error) {
-    console.error(error);
-    res.status(401).json({ error: 'Google 로그인 실패' });
-  }
-});
-
-// 사용자 프로필 저장/업데이트
-app.post('/api/profile', verifyToken, upload.single('profileImage'), async (req, res) => {
-  try {
-    const { name } = req.body;
-    const { googleId } = req.user;
-    
-    let profileImageUrl = null;
-    if (req.file) {
-      profileImageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+// 기본 라우트
+app.get('/', (req, res) => {
+  res.json({ 
+    message: '방토리 API 서버가 실행 중입니다',
+    version: '1.0.0',
+    endpoints: {
+      users: '/api/users',
+      rooms: '/api/rooms'
     }
-    
-    const updateData = {
-      name,
-      updatedAt: new Date()
-    };
-    
-    if (profileImageUrl) {
-      updateData.profileImageUrl = profileImageUrl;
-    }
-    
-    await db.collection('users').updateOne(
-      { googleId },
-      { $set: updateData }
-    );
-    
-    res.json({ message: '프로필이 저장되었습니다', profileImageUrl });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: '프로필 저장 실패' });
-  }
+  });
 });
 
-// 사용자 프로필 조회
-app.get('/api/profile', verifyToken, async (req, res) => {
-  try {
-    const { googleId } = req.user;
-    const profile = await db.collection('users').findOne({ googleId });
-    
-    if (!profile) {
-      return res.status(404).json({ error: '프로필을 찾을 수 없습니다' });
-    }
-    
-    res.json(profile);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: '프로필 조회 실패' });
-  }
+// 헬스 체크
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`서버가 포트 ${PORT}에서 실행 중입니다`);
+// API 라우트
+app.use('/api/users', require('./routes/users'));
+app.use('/api/rooms', require('./routes/rooms'));
+
+// Socket.IO 연결 처리
+io.on('connection', (socket) => {
+  console.log('🔗 사용자 연결:', socket.id);
+
+  // 방 참여
+  socket.on('join_room', (roomId) => {
+    socket.join(roomId);
+    console.log(`📍 사용자 ${socket.id}가 방 ${roomId}에 참여`);
+  });
+
+  // 방 나가기
+  socket.on('leave_room', (roomId) => {
+    socket.leave(roomId);
+    console.log(`🚪 사용자 ${socket.id}가 방 ${roomId}에서 나감`);
+  });
+
+  // 방 정보 업데이트 브로드캐스트
+  socket.on('room_updated', (data) => {
+    socket.to(data.roomId).emit('room_updated', data);
+  });
+
+  // 연결 해제
+  socket.on('disconnect', () => {
+    console.log('❌ 사용자 연결 해제:', socket.id);
+  });
 });
+
+// 에러 핸들링 미들웨어
+app.use((error, req, res, next) => {
+  console.error('서버 오류:', error);
+  res.status(500).json({ 
+    success: false,
+    message: '서버 내부 오류가 발생했습니다.',
+    error: process.env.NODE_ENV === 'development' ? error.message : undefined
+  });
+});
+
+// 404 핸들러
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    success: false,
+    message: '요청한 리소스를 찾을 수 없습니다.' 
+  });
+});
+
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`🚀 서버가 포트 ${PORT}에서 실행 중입니다.`);
+  console.log(`🌐 http://localhost:${PORT} 에서 접속 가능합니다.`);
+});
+
+// 글로벌 Socket.IO 인스턴스 내보내기
+module.exports = { io };

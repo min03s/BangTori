@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.yourcompany" "\0"
-            VALUE "FileDescription", "frontend" "\0"
+            VALUE "FileDescription", "bangtori" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "frontend" "\0"
+            VALUE "InternalName", "bangtori" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 com.yourcompany. All rights reserved." "\0"
-            VALUE "OriginalFilename", "frontend.exe" "\0"
-            VALUE "ProductName", "frontend" "\0"
+            VALUE "OriginalFilename", "bangtori.exe" "\0"
+            VALUE "ProductName", "bangtori" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

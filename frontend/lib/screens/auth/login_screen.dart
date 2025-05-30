@@ -1,334 +1,179 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
-import '../../widgets/profile_avatar.dart';
+import '../../widgets/custom_button.dart';
 
-class ProfileSetupScreen extends StatefulWidget {
-  @override
-  _ProfileSetupScreenState createState() => _ProfileSetupScreenState();
-}
-
-class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nicknameController = TextEditingController();
-  File? _selectedImage;
-  final ImagePicker _imagePicker = ImagePicker();
-
-  @override
-  void initState() {
-    super.initState();
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    if (authProvider.user != null) {
-      _nicknameController.text = authProvider.user!.nickname;
-    }
-  }
-
-  @override
-  void dispose() {
-    _nicknameController.dispose();
-    super.dispose();
-  }
-
+class LoginScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-
-    // 이미 방에 속해있다면 홈으로
-    if (authProvider.user?.currentRoom != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacementNamed(context, '/home');
-      });
-    }
-
     return Scaffold(
-      appBar: AppBar(
-        title: Text('프로필 설정'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          TextButton(
-            onPressed: () => _skipToRoomSelection(),
-            child: Text('건너뛰기'),
-          ),
-        ],
-      ),
       body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        SizedBox(height: 32),
+        child: Consumer<AuthProvider>(
+          builder: (context, authProvider, child) {
+            return Padding(
+              padding: EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // 로고 및 타이틀
+                  _buildHeader(context),
 
-                        // 프로필 사진 설정
-                        _buildProfileImageSection(),
+                  SizedBox(height: 48),
 
-                        SizedBox(height: 40),
+                  // 소셜 로그인 버튼들
+                  _buildSocialLoginButtons(context, authProvider),
 
-                        // 닉네임 입력
-                        _buildNicknameSection(),
+                  SizedBox(height: 24),
 
-                        SizedBox(height: 24),
+                  // 오류 메시지
+                  if (authProvider.error != null)
+                    _buildErrorMessage(context, authProvider),
 
-                        // 안내 텍스트
-                        _buildInfoText(),
-                      ],
-                    ),
-                  ),
-                ),
+                  SizedBox(height: 24),
 
-                // 하단 버튼들
-                _buildBottomButtons(authProvider),
-              ],
-            ),
-          ),
+                  // 서비스 이용약관
+                  _buildTermsText(context),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildProfileImageSection() {
-    final authProvider = Provider.of<AuthProvider>(context);
-
+  Widget _buildHeader(BuildContext context) {
     return Column(
       children: [
+        Container(
+          height: 120,
+          width: 120,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Theme.of(context).primaryColor.withOpacity(0.1),
+          ),
+          child: Icon(
+            Icons.home_work,
+            size: 60,
+            color: Theme.of(context).primaryColor,
+          ),
+        ),
+
+        SizedBox(height: 24),
+
         Text(
-          '프로필 사진을 설정해주세요',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          '방토리',
+          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
             fontWeight: FontWeight.bold,
+            color: Theme.of(context).primaryColor,
           ),
         ),
 
         SizedBox(height: 8),
 
         Text(
-          '나중에 변경할 수 있습니다',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          '공동 생활 관리 서비스',
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
             color: Colors.grey[600],
           ),
         ),
 
-        SizedBox(height: 32),
+        SizedBox(height: 16),
 
-        Stack(
-          children: [
-            ProfileAvatar(
-              imageUrl: _selectedImage != null
-                  ? _selectedImage!.path
-                  : authProvider.user?.profileImage,
-              size: 120,
-              isEditable: true,
-              onTap: _showImagePickerOptions,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNicknameSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
         Text(
-          '닉네임',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
+          '소셜 계정으로 간편하게 시작하세요',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Colors.grey[500],
           ),
-        ),
-
-        SizedBox(height: 8),
-
-        TextFormField(
-          controller: _nicknameController,
-          decoration: InputDecoration(
-            hintText: '사용할 닉네임을 입력하세요',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          ),
-          validator: (value) {
-            if (value == null || value.trim().isEmpty) {
-              return '닉네임을 입력해주세요';
-            }
-            if (value.trim().length < 2) {
-              return '닉네임은 2자 이상이어야 합니다';
-            }
-            if (value.trim().length > 20) {
-              return '닉네임은 20자 이하여야 합니다';
-            }
-            return null;
-          },
-          onChanged: (value) {
-            setState(() {});
-          },
         ),
       ],
     );
   }
 
-  Widget _buildInfoText() {
+  Widget _buildSocialLoginButtons(BuildContext context, AuthProvider authProvider) {
+    return Column(
+      children: [
+        // Google 로그인
+        CustomButton(
+          text: 'Google로 시작하기',
+          icon: Icons.g_mobiledata,
+          backgroundColor: Colors.white,
+          textColor: Colors.black87,
+          borderColor: Colors.grey[300],
+          isLoading: authProvider.isLoading,
+          onPressed: () async {
+            final success = await authProvider.signInWithGoogle();
+            if (success) {
+              Navigator.pushReplacementNamed(context, '/profile-setup');
+            }
+          },
+        ),
+
+        SizedBox(height: 16),
+
+        // 카카오 로그인
+        CustomButton(
+          text: '카카오로 시작하기',
+          backgroundColor: Color(0xFFFFE812),
+          textColor: Colors.black87,
+          isLoading: authProvider.isLoading,
+          onPressed: () async {
+            final success = await authProvider.signInWithKakao();
+            if (success) {
+              Navigator.pushReplacementNamed(context, '/profile-setup');
+            }
+          },
+        ),
+
+        SizedBox(height: 16),
+
+        // 네이버 로그인 (임시 비활성화)
+        CustomButton(
+          text: '네이버로 시작하기 (준비중)',
+          backgroundColor: Colors.grey[300],
+          textColor: Colors.grey[600],
+          onPressed: null, // 비활성화
+        ),
+      ],
+    );
+  }
+
+  Widget _buildErrorMessage(BuildContext context, AuthProvider authProvider) {
     return Container(
-      padding: EdgeInsets.all(16),
+      padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue[50],
+        color: Colors.red[50],
+        border: Border.all(color: Colors.red[200]!),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue[200]!),
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline, color: Colors.blue),
-          SizedBox(width: 12),
+          Icon(Icons.error_outline, color: Colors.red, size: 20),
+          SizedBox(width: 8),
           Expanded(
             child: Text(
-              '프로필 설정 후 방을 생성하거나 기존 방에 참여할 수 있습니다.',
-              style: TextStyle(color: Colors.blue[700]),
+              authProvider.error!,
+              style: TextStyle(color: Colors.red[700]),
             ),
+          ),
+          IconButton(
+            onPressed: () => authProvider.clearError(),
+            icon: Icon(Icons.close, color: Colors.red, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBottomButtons(AuthProvider authProvider) {
-    return Column(
-      children: [
-        CustomButton(
-          text: '완료',
-          isLoading: authProvider.isLoading,
-          onPressed: _nicknameController.text.trim().length >= 2
-              ? () => _updateProfile(authProvider)
-              : null,
-        ),
-
-        SizedBox(height: 12),
-
-        TextButton(
-          onPressed: () => _skipToRoomSelection(),
-          child: Text('나중에 설정하기'),
-        ),
-
-        if (authProvider.error != null) ...[
-          SizedBox(height: 16),
-          Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.red[50],
-              border: Border.all(color: Colors.red[200]!),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.error_outline, color: Colors.red, size: 20),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    authProvider.error!,
-                    style: TextStyle(color: Colors.red[700]),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  void _showImagePickerOptions() {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: Icon(Icons.photo_camera),
-              title: Text('카메라로 촬영'),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.photo_library),
-              title: Text('갤러리에서 선택'),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.gallery);
-              },
-            ),
-            if (_selectedImage != null ||
-                (Provider.of<AuthProvider>(context, listen: false).user?.profileImage?.isNotEmpty ?? false))
-              ListTile(
-                leading: Icon(Icons.delete, color: Colors.red),
-                title: Text('사진 삭제', style: TextStyle(color: Colors.red)),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(() {
-                    _selectedImage = null;
-                  });
-                },
-              ),
-          ],
-        ),
+  Widget _buildTermsText(BuildContext context) {
+    return Text(
+      '로그인 시 이용약관 및 개인정보처리방침에 동의한 것으로 간주됩니다',
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: Colors.grey[500],
       ),
+      textAlign: TextAlign.center,
     );
-  }
-
-  Future<void> _pickImage(ImageSource source) async {
-    try {
-      final XFile? image = await _imagePicker.pickImage(
-        source: source,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 80,
-      );
-
-      if (image != null) {
-        setState(() {
-          _selectedImage = File(image.path);
-        });
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('이미지 선택 중 오류가 발생했습니다')),
-      );
-    }
-  }
-
-  Future<void> _updateProfile(AuthProvider authProvider) async {
-    if (!_formKey.currentState!.validate()) return;
-
-    String? imageBase64;
-    if (_selectedImage != null) {
-      try {
-        final bytes = await _selectedImage!.readAsBytes();
-        imageBase64 = 'data:image/jpeg;base64,${bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join()}';
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('이미지 처리 중 오류가 발생했습니다')),
-        );
-        return;
-      }
-    }
-
-    final success = await authProvider.updateProfile(
-      nickname: _nicknameController.text.trim(),
-      profileImage: imageBase64,
-    );
-
-    if (success) {
-      _skipToRoomSelection();
-    }
-  }
-
-  void _skipToRoomSelection() {
-    Navigator.pushReplacementNamed(context, '/room-selection');
   }
 }

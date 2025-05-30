@@ -1,4 +1,4 @@
-package com.yourcompany.frontend
+package com.yourcompany.bangtori
 
 import io.flutter.embedding.android.FlutterActivity
 

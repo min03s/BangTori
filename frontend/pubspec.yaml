@@ -21,7 +21,7 @@ dependencies:
   # 소셜 로그인
   google_sign_in: ^6.2.1
   kakao_flutter_sdk_user: ^1.9.1+2
-  flutter_naver_login: ^1.8.0
+  # flutter_naver_login: ^1.8.0
 
   # 로컬 저장소
   shared_preferences: ^2.2.2

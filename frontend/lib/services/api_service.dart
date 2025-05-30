@@ -1,102 +1,48 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-import '../config/env.dart';
-
 class ApiService {
-  static const String baseUrl = AppConfig.baseUrl;
+  static Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> data) async {
+    // 임시 구현 - 실제로는 HTTP 요청
+    await Future.delayed(Duration(seconds: 1));
 
-  static Future<Map<String, String>> _getHeaders() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
+    if (endpoint.contains('/auth/')) {
+      return {
+        'token': 'dummy_token',
+        'user': {
+          'id': '1',
+          'nickname': '테스트 사용자',
+          'email': 'test@example.com',
+          'profileImage': null,
+          'currentRoom': null,
+        }
+      };
+    }
 
+    return {'message': 'success'};
+  }
+
+  static Future<Map<String, dynamic>> get(String endpoint) async {
+    await Future.delayed(Duration(seconds: 1));
     return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      'user': {
+        'id': '1',
+        'nickname': '테스트 사용자',
+        'email': 'test@example.com',
+        'profileImage': null,
+        'currentRoom': null,
+      }
     };
   }
 
-  // GET 요청
-  static Future<Map<String, dynamic>> get(String endpoint) async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers,
-      );
-
-      return _handleResponse(response);
-    } catch (e) {
-      throw ApiException('네트워크 오류가 발생했습니다: $e');
-    }
-  }
-
-  // POST 요청
-  static Future<Map<String, dynamic>> post(
-      String endpoint,
-      Map<String, dynamic> data
-      ) async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.post(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers,
-        body: json.encode(data),
-      );
-
-      return _handleResponse(response);
-    } catch (e) {
-      throw ApiException('네트워크 오류가 발생했습니다: $e');
-    }
-  }
-
-  // PUT 요청
-  static Future<Map<String, dynamic>> put(
-      String endpoint,
-      Map<String, dynamic> data
-      ) async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.put(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers,
-        body: json.encode(data),
-      );
-
-      return _handleResponse(response);
-    } catch (e) {
-      throw ApiException('네트워크 오류가 발생했습니다: $e');
-    }
-  }
-
-  // DELETE 요청
-  static Future<Map<String, dynamic>> delete(String endpoint) async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.delete(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: headers,
-      );
-
-      return _handleResponse(response);
-    } catch (e) {
-      throw ApiException('네트워크 오류가 발생했습니다: $e');
-    }
-  }
-
-  static Map<String, dynamic> _handleResponse(http.Response response) {
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return json.decode(response.body);
-    } else if (response.statusCode == 401) {
-      throw AuthException('인증이 필요합니다');
-    } else if (response.statusCode == 403) {
-      throw AuthException('권한이 없습니다');
-    } else if (response.statusCode == 404) {
-      throw ApiException('요청한 리소스를 찾을 수 없습니다');
-    } else {
-      final errorData = json.decode(response.body);
-      throw ApiException(errorData['message'] ?? '서버 오류가 발생했습니다');
-    }
+  static Future<Map<String, dynamic>> put(String endpoint, Map<String, dynamic> data) async {
+    await Future.delayed(Duration(seconds: 1));
+    return {
+      'user': {
+        'id': '1',
+        'nickname': data['nickname'],
+        'email': 'test@example.com',
+        'profileImage': data['profileImage'],
+        'currentRoom': null,
+      }
+    };
   }
 }
 

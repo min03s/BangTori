@@ -14,7 +14,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 // MongoDB 연결
-const mongoUrl = 'mongodb://localhost:27017/bangtori';
+const mongoUrl = 'mongodb://127.0.0.1:27017/bangtori';
 let db;
 
 MongoClient.connect(mongoUrl).then(mongoClient => {

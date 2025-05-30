@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.yourcompany.frontend"
+    namespace = "com.yourcompany.bangtori"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 

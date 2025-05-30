@@ -1,7 +1,7 @@
 {
-  "name": "bangtori-backend",
+  "name": "simple-google-login-backend",
   "version": "1.0.0",
-  "description": "Bang Tori - 공동 생활 관리 서비스",
+  "description": "Simple Node.js backend for Google login without Firebase",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,19 +9,11 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "mongoose": "^7.5.0",
     "jsonwebtoken": "^9.0.2",
-    "bcryptjs": "^2.4.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "socket.io": "^4.7.2",
-    "passport": "^0.6.0",
-    "passport-google-oauth20": "^2.0.0",
-    "passport-kakao": "^1.0.1",
-    "passport-naver": "^1.0.6",
-    "express-validator": "^7.0.1",
-    "node-cron": "^3.0.2",
-    "firebase-admin": "^11.10.1"
+    "google-auth-library": "^9.0.0",
+    "mongodb": "^5.7.0",
+    "multer": "^1.4.5",
+    "cors": "^2.8.5"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

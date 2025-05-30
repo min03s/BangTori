@@ -1,100 +1,158 @@
 const express = require('express');
-const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
+const { MongoClient } = require('mongodb');
+const multer = require('multer');
 const cors = require('cors');
-const dotenv = require('dotenv');
-const passport = require('passport');
-const http = require('http');
-const socketIo = require('socket.io');
+const { OAuth2Client } = require('google-auth-library');
+const path = require('path');
+const fs = require('fs');
 
-// 환경변수 로드
-dotenv.config();
-
-// Express 앱 생성
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+
+// Google OAuth 클라이언트
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+// MongoDB 연결
+const mongoUrl = 'mongodb://localhost:27017/bangtori';
+let db;
+
+MongoClient.connect(mongoUrl).then(mongoClient => {
+  console.log('MongoDB 연결 성공');
+  db = mongoClient.db();
 });
+
+// 업로드 폴더 생성
+const uploadDir = 'uploads';
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
 // 미들웨어
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(passport.initialize());
+app.use('/uploads', express.static('uploads')); // 이미지 정적 서빙
 
-// 데이터베이스 연결
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/bangtori', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log('MongoDB 연결 성공'))
-.catch(err => console.error('MongoDB 연결 실패:', err));
-
-// 기본 라우트
-app.get('/', (req, res) => {
-  res.json({ message: '방토리 API 서버가 실행 중입니다.' });
+// 파일 업로드 설정 (로컬 저장)
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}_${Math.random().toString(36).substr(2, 9)}${ext}`);
+  }
 });
+const upload = multer({ storage });
 
-// 헬스 체크
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
-
-// 라우트 (파일이 존재할 때만 로드)
-try {
-  const authRoutes = require('./routes/auth');
-  app.use('/api/auth', authRoutes);
-} catch (error) {
-  console.log('auth 라우트 파일이 없습니다. 기본 인증 라우트를 사용합니다.');
+// JWT 토큰 검증 미들웨어
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    return res.status(401).json({ error: '토큰이 필요합니다' });
+  }
   
-  // 기본 인증 라우트
-  app.get('/api/auth/test', (req, res) => {
-    res.json({ message: '인증 테스트 성공' });
-  });
-}
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: '유효하지 않은 토큰' });
+  }
+};
 
-try {
-  const userRoutes = require('./routes/users');
-  app.use('/api/users', userRoutes);
-} catch (error) {
-  console.log('users 라우트 파일이 없습니다.');
-}
-
-try {
-  const roomRoutes = require('./routes/rooms');
-  app.use('/api/rooms', roomRoutes);
-} catch (error) {
-  console.log('rooms 라우트 파일이 없습니다.');
-}
-
-// 에러 핸들링 미들웨어
-app.use((error, req, res, next) => {
-  console.error('서버 오류:', error);
-  res.status(500).json({ 
-    message: '서버 내부 오류가 발생했습니다.',
-    error: process.env.NODE_ENV === 'development' ? error.message : undefined
-  });
+// Google 로그인
+app.post('/api/login', async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    
+    // Google ID 토큰 검증
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+    
+    // JWT 토큰 생성
+    const token = jwt.sign(
+      { googleId, email, name },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    
+    // 사용자 정보 DB에 저장 (처음 로그인시)
+    await db.collection('users').updateOne(
+      { googleId },
+      { 
+        $set: { 
+          email, 
+          googleName: name,
+          googlePicture: picture,
+          lastLogin: new Date() 
+        } 
+      },
+      { upsert: true }
+    );
+    
+    res.json({ token, user: { googleId, email, name } });
+  } catch (error) {
+    console.error(error);
+    res.status(401).json({ error: 'Google 로그인 실패' });
+  }
 });
 
-// 404 핸들러
-app.use('*', (req, res) => {
-  res.status(404).json({ message: '요청한 리소스를 찾을 수 없습니다.' });
+// 사용자 프로필 저장/업데이트
+app.post('/api/profile', verifyToken, upload.single('profileImage'), async (req, res) => {
+  try {
+    const { name } = req.body;
+    const { googleId } = req.user;
+    
+    let profileImageUrl = null;
+    if (req.file) {
+      profileImageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    }
+    
+    const updateData = {
+      name,
+      updatedAt: new Date()
+    };
+    
+    if (profileImageUrl) {
+      updateData.profileImageUrl = profileImageUrl;
+    }
+    
+    await db.collection('users').updateOne(
+      { googleId },
+      { $set: updateData }
+    );
+    
+    res.json({ message: '프로필이 저장되었습니다', profileImageUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: '프로필 저장 실패' });
+  }
 });
 
-// Socket.IO 기본 설정
-io.on('connection', (socket) => {
-  console.log('사용자가 연결되었습니다:', socket.id);
-  
-  socket.on('disconnect', () => {
-    console.log('사용자가 연결을 해제했습니다:', socket.id);
-  });
+// 사용자 프로필 조회
+app.get('/api/profile', verifyToken, async (req, res) => {
+  try {
+    const { googleId } = req.user;
+    const profile = await db.collection('users').findOne({ googleId });
+    
+    if (!profile) {
+      return res.status(404).json({ error: '프로필을 찾을 수 없습니다' });
+    }
+    
+    res.json(profile);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: '프로필 조회 실패' });
+  }
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-  console.log(`http://localhost:${PORT} 에서 접속 가능합니다.`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`서버가 포트 ${PORT}에서 실행 중입니다`);
 });

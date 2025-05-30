@@ -1,332 +1,122 @@
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'dart:io';
-import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Simple Google Login',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: AuthWrapper(),
+      title: 'Flutter Demo',
+      theme: ThemeData(
+        // This is the theme of your application.
+        //
+        // TRY THIS: Try running your application with "flutter run". You'll see
+        // the application has a purple toolbar. Then, without quitting the app,
+        // try changing the seedColor in the colorScheme below to Colors.green
+        // and then invoke "hot reload" (save your changes or press the "hot
+        // reload" button in a Flutter-supported IDE, or press "r" if you used
+        // the command line to start the app).
+        //
+        // Notice that the counter didn't reset back to zero; the application
+        // state is not lost during the reload. To reset the state, use hot
+        // restart instead.
+        //
+        // This works for code too, not just values: Most code changes can be
+        // tested with just a hot reload.
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+      ),
+      home: const MyHomePage(title: 'Flutter Demo Home Page'),
     );
   }
 }
 
-class AuthWrapper extends StatefulWidget {
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({super.key, required this.title});
+
+  // This widget is the home page of your application. It is stateful, meaning
+  // that it has a State object (defined below) that contains fields that affect
+  // how it looks.
+
+  // This class is the configuration for the state. It holds the values (in this
+  // case the title) provided by the parent (in this case the App widget) and
+  // used by the build method of the State. Fields in a Widget subclass are
+  // always marked "final".
+
+  final String title;
+
   @override
-  _AuthWrapperState createState() => _AuthWrapperState();
+  State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _AuthWrapperState extends State<AuthWrapper> {
-  bool _isLoggedIn = false;
-  bool _isLoading = true;
+class _MyHomePageState extends State<MyHomePage> {
+  int _counter = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    _checkLoginStatus();
-  }
-
-  Future<void> _checkLoginStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
+  void _incrementCounter() {
     setState(() {
-      _isLoggedIn = token != null;
-      _isLoading = false;
+      // This call to setState tells the Flutter framework that something has
+      // changed in this State, which causes it to rerun the build method below
+      // so that the display can reflect the updated values. If we changed
+      // _counter without calling setState(), then the build method would not be
+      // called again, and so nothing would appear to happen.
+      _counter++;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    return _isLoggedIn ? ProfileScreen() : LoginScreen();
-  }
-}
-
-class LoginScreen extends StatelessWidget {
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email', 'profile'],
-    // Android용 클라이언트 ID 추가 (필요시)
-    // clientId: '162635832030-2lfcni5dhm5ce2v4unsvkm5doq2e66of.apps.googleusercontent.com.googleusercontent.com',
-  );
-
-  final String _baseUrl = 'http://localhost:3000/api';
-
-  Future<void> _signInWithGoogle(BuildContext context) async {
-    try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return;
-
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-
-      // 백엔드에 Google ID 토큰 전송
-      final response = await http.post(
-        Uri.parse('$_baseUrl/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'idToken': googleAuth.idToken,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        // JWT 토큰 저장
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('auth_token', data['token']);
-
-        // 화면 새로고침
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => ProfileScreen()),
-        );
-      } else {
-        throw Exception('로그인 실패');
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('로그인 실패: ${e.toString()}')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('로그인')),
-      body: Center(
-        child: ElevatedButton.icon(
-          onPressed: () => _signInWithGoogle(context),
-          icon: Icon(Icons.login),
-          label: Text('Google로 로그인'),
-          style: ElevatedButton.styleFrom(
-            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class ProfileScreen extends StatefulWidget {
-  @override
-  _ProfileScreenState createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  final _nameController = TextEditingController();
-  final _picker = ImagePicker();
-  File? _imageFile;
-  String? _currentImageUrl;
-  bool _isLoading = false;
-
-  final String _baseUrl = 'http://localhost:3000/api';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
-  }
-
-  Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('auth_token');
-  }
-
-  Future<void> _loadProfile() async {
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      final response = await http.get(
-        Uri.parse('$_baseUrl/profile'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          _nameController.text = data['name'] ?? '';
-          _currentImageUrl = data['profileImageUrl'];
-        });
-      }
-    } catch (e) {
-      print('프로필 로드 실패: $e');
-    }
-  }
-
-  Future<void> _pickImage() async {
-    final pickedFile = await _picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 512,
-      maxHeight: 512,
-      imageQuality: 80,
-    );
-
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
-    }
-  }
-
-  Future<void> _saveProfile() async {
-    if (_nameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('이름을 입력해주세요')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      var request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/profile'));
-      request.headers['Authorization'] = 'Bearer $token';
-      request.fields['name'] = _nameController.text.trim();
-
-      if (_imageFile != null) {
-        request.files.add(
-          await http.MultipartFile.fromPath('profileImage', _imageFile!.path),
-        );
-      }
-
-      final response = await request.send();
-
-      if (response.statusCode == 200) {
-        final responseData = await response.stream.bytesToString();
-        final data = json.decode(responseData);
-
-        setState(() {
-          if (data['profileImageUrl'] != null) {
-            _currentImageUrl = data['profileImageUrl'];
-          }
-          _imageFile = null; // 업로드 후 임시 파일 제거
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('프로필이 저장되었습니다')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('저장 실패: ${e.toString()}')),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _signOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
-    await GoogleSignIn().signOut();
-
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => LoginScreen()),
-    );
-  }
-
-  Widget _buildProfileImage() {
-    if (_imageFile != null) {
-      return CircleAvatar(
-        radius: 60,
-        backgroundImage: FileImage(_imageFile!),
-      );
-    } else if (_currentImageUrl != null) {
-      return CircleAvatar(
-        radius: 60,
-        backgroundImage: NetworkImage(_currentImageUrl!),
-      );
-    } else {
-      return CircleAvatar(
-        radius: 60,
-        backgroundColor: Colors.grey[300],
-        child: Icon(Icons.person, size: 60, color: Colors.grey[600]),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+    // This method is rerun every time setState is called, for instance as done
+    // by the _incrementCounter method above.
+    //
+    // The Flutter framework has been optimized to make rerunning build methods
+    // fast, so that you can just rebuild anything that needs updating rather
+    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        title: Text('프로필'),
-        actions: [
-          IconButton(
-            onPressed: _signOut,
-            icon: Icon(Icons.logout),
-          ),
-        ],
+        // TRY THIS: Try changing the color here to a specific color (to
+        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
+        // change color while the other colors stay the same.
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        // Here we take the value from the MyHomePage object that was created by
+        // the App.build method, and use it to set our appbar title.
+        title: Text(widget.title),
       ),
-      body: Padding(
-        padding: EdgeInsets.all(16),
+      body: Center(
+        // Center is a layout widget. It takes a single child and positions it
+        // in the middle of the parent.
         child: Column(
-          children: [
-            SizedBox(height: 20),
-            GestureDetector(
-              onTap: _pickImage,
-              child: Stack(
-                children: [
-                  _buildProfileImage(),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      padding: EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.blue,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.camera_alt,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 30),
-            TextField(
-              controller: _nameController,
-              decoration: InputDecoration(
-                labelText: '이름',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person),
-              ),
-            ),
-            SizedBox(height: 30),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _saveProfile,
-                child: _isLoading
-                    ? CircularProgressIndicator(color: Colors.white)
-                    : Text('프로필 저장', style: TextStyle(fontSize: 16)),
-              ),
+          // Column is also a layout widget. It takes a list of children and
+          // arranges them vertically. By default, it sizes itself to fit its
+          // children horizontally, and tries to be as tall as its parent.
+          //
+          // Column has various properties to control how it sizes itself and
+          // how it positions its children. Here we use mainAxisAlignment to
+          // center the children vertically; the main axis here is the vertical
+          // axis because Columns are vertical (the cross axis would be
+          // horizontal).
+          //
+          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
+          // action in the IDE, or press "p" in the console), to see the
+          // wireframe for each widget.
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            const Text('You have pushed the button this many times:'),
+            Text(
+              '$_counter',
+              style: Theme.of(context).textTheme.headlineMedium,
             ),
           ],
         ),
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _incrementCounter,
+        tooltip: 'Increment',
+        child: const Icon(Icons.add),
+      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }

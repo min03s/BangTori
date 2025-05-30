@@ -10,6 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   provider: ^6.1.1
+  http: ^1.1.2
+  socket_io_client: ^2.0.3+1
   shared_preferences: ^2.2.2
   uuid: ^4.2.1
   cupertino_icons: ^1.0.6

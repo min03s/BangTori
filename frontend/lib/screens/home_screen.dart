@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/room_provider.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_input.dart';
+import '../widgets/connection_status.dart';
 import 'room_create_screen.dart';
 import 'room_join_screen.dart';
 import 'room_detail_screen.dart';
@@ -27,25 +28,44 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Consumer<RoomProvider>(
-          builder: (context, roomProvider, child) {
-            if (roomProvider.isLoading) {
-              return Center(child: CircularProgressIndicator());
-            }
+        child: Column(
+          children: [
+            // 연결 상태 표시
+            ConnectionStatus(),
 
-            // 현재 방에 있다면 방 상세 화면
-            if (roomProvider.currentRoom != null) {
-              return RoomDetailScreen();
-            }
+            // 메인 콘텐츠
+            Expanded(
+              child: Consumer<RoomProvider>(
+                builder: (context, roomProvider, child) {
+                  if (roomProvider.isLoading) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('로딩 중...'),
+                        ],
+                      ),
+                    );
+                  }
 
-            // 사용자가 없다면 닉네임 설정
-            if (roomProvider.currentUser == null) {
-              return _buildNicknameSetup(roomProvider);
-            }
+                  // 현재 방에 있다면 방 상세 화면
+                  if (roomProvider.currentRoom != null) {
+                    return RoomDetailScreen();
+                  }
 
-            // 방 선택 화면
-            return _buildRoomSelection(roomProvider);
-          },
+                  // 사용자가 없다면 닉네임 설정
+                  if (roomProvider.currentUser == null) {
+                    return _buildNicknameSetup(roomProvider);
+                  }
+
+                  // 방 선택 화면
+                  return _buildRoomSelection(roomProvider);
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -86,10 +106,31 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           if (roomProvider.error != null) ...[
             SizedBox(height: 16),
-            Text(
-              roomProvider.error!,
-              style: TextStyle(color: Colors.red),
-              textAlign: TextAlign.center,
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                border: Border.all(color: Colors.red[200]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      roomProvider.error!,
+                      style: TextStyle(color: Colors.red[700]),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => roomProvider.clearError(),
+                    icon: Icon(Icons.close, color: Colors.red, size: 18),
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints(),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
@@ -116,7 +157,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 60,
                   height: 60,
                   decoration: BoxDecoration(
-                    color: Color(int.parse(roomProvider.currentUser!.profileColor!.substring(1), radix: 16) + 0xFF000000),
+                    color: roomProvider.currentUser!.profileColor != null
+                        ? Color(int.parse(roomProvider.currentUser!.profileColor!.substring(1), radix: 16) + 0xFF000000)
+                        : Colors.blue,
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -139,6 +182,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   '어떻게 시작하시겠어요?',
                   style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                 ),
+                if (!roomProvider.isConnected) ...[
+                  SizedBox(height: 8),
+                  Text(
+                    '(현재 오프라인 모드)',
+                    style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+                  ),
+                ],
               ],
             ),
           ),
@@ -186,14 +236,49 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ListTile(
                       leading: Icon(Icons.home, color: Colors.blue),
                       title: Text(room.name),
-                      subtitle: Text('${room.members.length}명 참여 중'),
-                      trailing: Icon(Icons.arrow_forward_ios),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${room.members.length}명 참여 중'),
+                          Text(
+                            '초대 코드: ${room.inviteCode}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontFamily: 'monospace',
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!roomProvider.isConnected)
+                            Icon(Icons.cloud_off,
+                                color: Colors.orange, size: 16),
+                          SizedBox(width: 4),
+                          Icon(Icons.arrow_forward_ios),
+                        ],
+                      ),
                       onTap: () {
                         roomProvider.selectRoom(room);
                       },
                     ),
                   );
                 },
+              ),
+            ),
+          ] else ...[
+            Expanded(
+              child: Center(
+                child: Text(
+                  '아직 참여한 방이 없습니다.\n새 방을 만들거나 초대 코드로 참여해보세요!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 16,
+                  ),
+                ),
               ),
             ),
           ],
@@ -203,7 +288,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _createUser(RoomProvider roomProvider) async {
-    await roomProvider.createUser(_nicknameController.text.trim());
+    try {
+      await roomProvider.createUser(_nicknameController.text.trim());
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('사용자 생성 중 오류가 발생했습니다: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override

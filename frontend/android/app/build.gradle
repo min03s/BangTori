@@ -25,12 +25,12 @@ if (flutterVersionName == null) {
 android {
     namespace "com.yourcompany.bangtori"
     compileSdk flutter.compileSdkVersion
-            ndkVersion flutter.ndkVersion
+    ndkVersion flutter.ndkVersion
 
-            compileOptions {
-                sourceCompatibility JavaVersion.VERSION_1_8
-                        targetCompatibility JavaVersion.VERSION_1_8
-            }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 
     kotlinOptions {
         jvmTarget = '1.8'
@@ -43,9 +43,10 @@ android {
     defaultConfig {
         applicationId "com.yourcompany.bangtori"
         minSdkVersion flutter.minSdkVersion
-                targetSdkVersion flutter.targetSdkVersion
-                versionCode flutterVersionCode.toInteger()
+        targetSdkVersion flutter.targetSdkVersion
+        versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+        manifestPlaceholders = [auth_redirect_scheme: "com.googleusercontent.apps.585405628539-umfdib8iamb0k07u3j6ag4ng2ia96tpg.apps.googleusercontent.com"]
     }
 
     buildTypes {

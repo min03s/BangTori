@@ -15,10 +15,19 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _nicknameController = TextEditingController();
+  bool _isButtonEnabled = false; // 버튼 활성화 상태 추가
 
   @override
   void initState() {
     super.initState();
+
+    // 텍스트 변화 감지 리스너 추가
+    _nicknameController.addListener(() {
+      setState(() {
+        _isButtonEnabled = _nicknameController.text.trim().length >= 2;
+      });
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<RoomProvider>(context, listen: false).initialize();
     });
@@ -99,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
           SizedBox(height: 24),
           CustomButton(
             text: '시작하기',
-            onPressed: _nicknameController.text.trim().length >= 2
+            onPressed: _isButtonEnabled  // 수정된 부분
                 ? () => _createUser(roomProvider)
                 : null,
             isLoading: roomProvider.isLoading,
@@ -302,6 +311,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _nicknameController.removeListener(() {}); // 리스너 제거
     _nicknameController.dispose();
     super.dispose();
   }

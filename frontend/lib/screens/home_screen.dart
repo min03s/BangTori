@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../utils/app_state.dart';
+import '../utils/icon_utils.dart'; // 추가
 import 'dynamic_chore_screen.dart'; // 추가
 import 'dynamic_reservation_screen.dart'; // 추가
 import 'package:frontend/settings/setting_home.dart';
@@ -32,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadCategories();
+    _loadRoomMembers(); // 방 멤버 로드 추가
   }
 
   Future<void> _loadCategories() async {
@@ -40,7 +42,13 @@ class _HomeScreenState extends State<HomeScreen> {
     await appState.loadReservationCategories();
   }
 
-  // 카테고리별 아이콘 매핑
+  // 방 멤버 로드 메서드 추가
+  Future<void> _loadRoomMembers() async {
+    final appState = Provider.of<AppState>(context, listen: false);
+    await appState.loadRoomMembers();
+  }
+
+  // 카테고리별 아이콘 매핑 (이모지 → 기본 아이콘)
   IconData getCategoryIcon(String categoryName) {
     final iconMap = {
       // 집안일 아이콘
@@ -52,6 +60,23 @@ class _HomeScreenState extends State<HomeScreen> {
       '욕실': Icons.bathtub,
       '세탁기': Icons.local_laundry_service,
       '방문객': Icons.emoji_people,
+
+      // 추가 가능한 아이콘들
+      '주방': Icons.kitchen,
+      '거실': Icons.weekend,
+      '방': Icons.bed,
+      '화장실': Icons.wc,
+      '발코니': Icons.balcony,
+      '정원': Icons.grass,
+      '차고': Icons.garage,
+      '운동': Icons.fitness_center,
+      '공부': Icons.school,
+      '회의': Icons.meeting_room,
+      '음식': Icons.restaurant,
+      '쇼핑': Icons.shopping_cart,
+      '의료': Icons.medical_services,
+      '여행': Icons.flight,
+      '업무': Icons.work,
     };
 
     return iconMap[categoryName] ?? Icons.category;
@@ -80,21 +105,30 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 동적 카테고리 아이템 빌드
+  // 동적 카테고리 아이템 빌드 (IconUtils 사용)
   Widget _buildCategoryItem(Map<String, dynamic> category, bool isChore) {
     final categoryName = category['name'];
-    final categoryIcon = category['icon'];
+    final categoryIcon = category['icon']; // 아이콘 이름이 저장됨
     final isDefault = category['type'] == 'default';
+
+    // 아이콘 결정 순서: 저장된 아이콘 이름 → 카테고리 이름 기반 기본 아이콘 → 기본 아이콘
+    IconData iconData;
+    if (categoryIcon != null && categoryIcon.isNotEmpty) {
+      iconData = IconUtils.getIconData(categoryIcon);
+    } else {
+      iconData = IconUtils.getDefaultIconForCategory(categoryName);
+    }
 
     return GestureDetector(
       onTap: () => _navigateToScreen(category, isChore),
       onLongPress: isDefault ? null : () => _confirmDeleteCategory(isChore, category),
       child: Column(
         children: [
-          // 이모지 아이콘이 있으면 사용, 없으면 기본 아이콘 사용
-          categoryIcon.isNotEmpty
-              ? Text(categoryIcon, style: const TextStyle(fontSize: 32))
-              : Icon(getCategoryIcon(categoryName), size: 35, color: Colors.black54),
+          Icon(
+            iconData,
+            size: 35,
+            color: Colors.black54,
+          ),
           const SizedBox(height: 10),
           Text(categoryName),
         ],
@@ -155,10 +189,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 카테고리 추가 다이얼로그
+  // 카테고리 추가 다이얼로그 (IconUtils 사용)
   void _showAddCategoryDialog(bool isChore) {
-    String selectedIcon = '⭐';
+    String selectedIconName = 'category';
     TextEditingController nameController = TextEditingController();
+
+    // 카테고리 타입에 맞는 아이콘 목록 가져오기
+    final availableIcons = isChore
+        ? IconUtils.getChoreIcons()
+        : IconUtils.getReservationIcons();
 
     showDialog(
       context: context,
@@ -166,42 +205,60 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, setDialogState) {
           return AlertDialog(
             title: Text('${isChore ? "집안일" : "예약"} 카테고리 추가'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: '카테고리 이름'),
-                ),
-                const SizedBox(height: 10),
-                const Text('아이콘 선택:'),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    '⭐', '🏠', '💡', '🐾', '☕', '📶', '🔧', '📱', '🎮', '📚'
-                  ].map((icon) {
-                    return GestureDetector(
-                      onTap: () {
-                        setDialogState(() {
-                          selectedIcon = icon;
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: selectedIcon == icon ? Colors.pinkAccent : Colors.grey,
-                            width: 2,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(icon, style: const TextStyle(fontSize: 24)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: '카테고리 이름'),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('아이콘 선택:'),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.maxFinite,
+                    height: 200,
+                    child: GridView.builder(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 4,
+                        childAspectRatio: 1,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
                       ),
-                    );
-                  }).toList(),
-                ),
-              ],
+                      itemCount: availableIcons.length,
+                      itemBuilder: (context, index) {
+                        final iconName = availableIcons.keys.elementAt(index);
+                        final iconData = availableIcons[iconName]!;
+                        final isSelected = selectedIconName == iconName;
+
+                        return GestureDetector(
+                          onTap: () {
+                            setDialogState(() {
+                              selectedIconName = iconName;
+                            });
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: isSelected ? const Color(0xFFFA2E55) : Colors.grey,
+                                width: isSelected ? 3 : 1,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              color: isSelected ? const Color(0xFFFA2E55).withOpacity(0.1) : null,
+                            ),
+                            child: Icon(
+                              iconData,
+                              size: 28,
+                              color: isSelected ? const Color(0xFFFA2E55) : Colors.grey[700],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -209,6 +266,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: const Text('취소'),
               ),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFA2E55),
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: () async {
                   final name = nameController.text.trim();
                   if (name.isNotEmpty) {
@@ -218,12 +279,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (isChore) {
                         await appState.createChoreCategory(
                           name: name,
-                          icon: selectedIcon,
+                          icon: selectedIconName,
                         );
                       } else {
                         await appState.createReservationCategory(
                           name: name,
-                          icon: selectedIcon,
+                          icon: selectedIconName,
                         );
                       }
 
@@ -326,18 +387,26 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.black),
+            onPressed: () async {
+              // 모든 데이터 새로고침
+              await _loadCategories();
+              await _loadRoomMembers();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.notifications_none, color: Colors.black),
             onPressed: () {
               // 알림 처리
             },
-          )
+          ),
         ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            _buildProfileSection(),
+            _buildProfileSection(), // 통합된 프로필 섹션
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -389,24 +458,176 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildProfileSection() => ListTile(
-    leading: CircleAvatar(
-      radius: 24,
-      backgroundColor: Colors.pinkAccent,
-      child: const Icon(Icons.face, color: Colors.white),
-    ),
-    title: Text(widget.userName,
-        style: const TextStyle(fontWeight: FontWeight.bold)),
-    subtitle: Consumer<AppState>(
+  Widget _buildProfileSection() {
+    return Consumer<AppState>(
       builder: (context, appState, child) {
-        return Text(appState.currentRoom?.isOwner == true ? '방장' : '멤버');
+        // 멤버 정렬: 방장을 맨 앞으로, 나머지는 입장한 순서대로
+        final sortedMembers = List<Map<String, dynamic>>.from(appState.roomMembers);
+        sortedMembers.sort((a, b) {
+          // 방장이면 맨 앞으로
+          if (a['isOwner'] == true && b['isOwner'] != true) return -1;
+          if (b['isOwner'] == true && a['isOwner'] != true) return 1;
+
+          // 둘 다 방장이 아니거나 둘 다 방장이면 입장한 순서대로
+          DateTime? aTime;
+          DateTime? bTime;
+
+          // joinedAt 시도
+          if (a['joinedAt'] != null) {
+            aTime = DateTime.tryParse(a['joinedAt'].toString());
+          }
+          if (b['joinedAt'] != null) {
+            bTime = DateTime.tryParse(b['joinedAt'].toString());
+          }
+
+          // joinedAt이 없으면 createdAt 시도
+          if (aTime == null && a['createdAt'] != null) {
+            aTime = DateTime.tryParse(a['createdAt'].toString());
+          }
+          if (bTime == null && b['createdAt'] != null) {
+            bTime = DateTime.tryParse(b['createdAt'].toString());
+          }
+
+          // 둘 다 있으면 비교
+          if (aTime != null && bTime != null) {
+            return aTime.compareTo(bTime);
+          }
+
+          // 시간 정보가 없으면 _id로 비교
+          final aId = a['_id']?.toString() ?? '';
+          final bId = b['_id']?.toString() ?? '';
+          return aId.compareTo(bId);
+        });
+
+        return Container(
+          height: 70,
+          child: Row(
+            children: [
+              // 멤버들
+              if (sortedMembers.isNotEmpty)
+                Expanded(
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: sortedMembers.length,
+                    itemBuilder: (context, index) {
+                      final member = sortedMembers[index];
+                      final isCurrentUser = member['userId'].toString() == appState.currentUser?.id;
+                      final isOwner = member['isOwner'] == true;
+
+                      return Container(
+                        margin: const EdgeInsets.only(right: 16),
+                        child: Column(
+                          children: [
+                            Stack(
+                              children: [
+                                CircleAvatar(
+                                  radius: 24,
+                                  backgroundColor: isCurrentUser
+                                      ? const Color(0xFFFA2E55)
+                                      : Colors.grey[400],
+                                  child: Icon(
+                                    Icons.person,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                ),
+                                // 방장 표시
+                                if (isOwner)
+                                  Positioned(
+                                    bottom: 0,
+                                    right: 0,
+                                    child: Container(
+                                      width: 18,
+                                      height: 18,
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: const Icon(
+                                        Icons.star,
+                                        color: Colors.white,
+                                        size: 10,
+                                      ),
+                                    ),
+                                  ),
+                                // 나 표시 (방장이 아닌 경우)
+                                if (isCurrentUser && !isOwner)
+                                  Positioned(
+                                    bottom: 0,
+                                    right: 0,
+                                    child: Container(
+                                      width: 18,
+                                      height: 18,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFA2E55),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      child: const Icon(
+                                        Icons.person,
+                                        color: Colors.white,
+                                        size: 10,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            SizedBox(
+                              width: 65,
+                              child: Text(
+                                member['nickname']?.toString() ?? '멤버',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: isCurrentUser ? const Color(0xFFFA2E55) : Colors.grey[700],
+                                  fontWeight: isCurrentUser ? FontWeight.bold : FontWeight.normal,
+                                ),
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+              // 초대 버튼 (항상 표시)
+              Container(
+                margin: EdgeInsets.only(left: sortedMembers.isNotEmpty ? 8 : 0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    GestureDetector(
+                      onTap: _showInviteCodeDialog,
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        child: const Icon(
+                          Icons.share,
+                          color: Colors.black54,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
       },
-    ),
-    trailing: IconButton(
-      icon: const Icon(Icons.share),
-      onPressed: _showInviteCodeDialog,
-    ),
-  );
+    );
+  }
 
   Widget _buildToggleButton(String text, bool isSelected, VoidCallback onTap) =>
       GestureDetector(
@@ -434,18 +655,28 @@ class _HomeScreenState extends State<HomeScreen> {
       BottomNavigationBarItem(icon: Icon(Icons.settings), label: '설정'),
     ],
     onTap: (index) {
-      if (index == 4) {
-        Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const SettingsScreen()));
-      } else if (index == 0) {
-        Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const CalendarScreen()));
+      if (index == 0) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const CalendarScreen()),
+        );
+      } else if (index == 1) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const FullScheduleScreen()),
+        );
+      } else if (index == 2) {
+        // 현재 홈 화면이므로 아무것도 하지 않음
       } else if (index == 3) {
         Navigator.push(
-            context, MaterialPageRoute(builder: (_) => const ChatRoomScreen()));
-      } else if (index == 1) {
-        Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const FullScheduleScreen()));
+          context,
+          MaterialPageRoute(builder: (_) => const ChatRoomScreen()),
+        );
+      } else if (index == 4) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+        );
       }
     },
   );

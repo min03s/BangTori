@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import '../utils/app_state.dart';
+import '../utils/dialog_utils.dart';
 
 class DynamicReservationScreen extends StatefulWidget {
   final Map<String, dynamic> category;
@@ -37,6 +37,15 @@ class _DynamicReservationScreenState extends State<DynamicReservationScreen> {
     _loadData();
   }
 
+  // 날짜 포맷팅 함수 추가
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDateTime(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _loadData() async {
     final appState = Provider.of<AppState>(context, listen: false);
 
@@ -70,19 +79,17 @@ class _DynamicReservationScreenState extends State<DynamicReservationScreen> {
 
     try {
       if (isVisitorCategory) {
-        // 방문객 예약
-        final reservationDateTime = DateTime(
+        // 방문객 예약 - 날짜와 시간을 정확히 조합
+        final reservationDate = DateTime(
           selectedDate.year,
           selectedDate.month,
           selectedDate.day,
-          selectedTime.hour,
-          selectedTime.minute,
         );
 
         await appState.createReservationSchedule(
           categoryId: widget.category['_id'],
-          specificDate: reservationDateTime,
-          startHour: selectedTime.hour,
+          specificDate: reservationDate, // 날짜만 전달
+          startHour: selectedTime.hour,  // 시간은 별도로 전달
           endHour: selectedTime.hour + 1,
         );
       } else {
@@ -128,24 +135,30 @@ class _DynamicReservationScreenState extends State<DynamicReservationScreen> {
   }
 
   Future<void> _deleteReservation(Map<String, dynamic> reservation) async {
-    final appState = Provider.of<AppState>(context, listen: false);
+    final shouldDelete = await DialogUtils.showDeleteConfirmDialog(
+      context,
+      title: '예약 삭제',
+      content: '${widget.category['name']} 예약을 삭제하시겠습니까?',
+    );
 
-    try {
-      await appState.deleteReservationSchedule(reservation['_id']);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('예약이 삭제되었습니다.'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('삭제 실패: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    if (shouldDelete) {
+      final appState = Provider.of<AppState>(context, listen: false);
+      try {
+        await appState.deleteReservationSchedule(reservation['_id']);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('예약이 삭제되었습니다.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('삭제 실패: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -320,8 +333,7 @@ class _DynamicReservationScreenState extends State<DynamicReservationScreen> {
                 side: BorderSide(color: borderColor, width: 1),
               ),
               child: ListTile(
-                title: Text(
-                  "${DateFormat('yyyy-MM-dd HH:mm').format(specificDate)} - $nickname$statusText",
+                title: Text("${_formatDateTime(specificDate)} - $nickname$statusText",
                   style: TextStyle(
                     fontWeight: status == 'pending' ? FontWeight.bold : FontWeight.normal,
                   ),
@@ -549,7 +561,7 @@ class _DynamicReservationScreenState extends State<DynamicReservationScreen> {
                   });
                 }
               },
-              child: Text(DateFormat('yyyy-MM-dd').format(selectedDate)),
+              child: Text(_formatDate(selectedDate)),
             ),
           ],
         ),

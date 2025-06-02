@@ -227,6 +227,87 @@ class ApiService {
     }
   }
 
+  // ===== 방 관리 관련 =====
+
+  Future<RoomModel> updateRoom({
+    required String roomId,
+    String? roomName,
+    String? address,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (roomName != null) body['roomName'] = roomName;
+      if (address != null) body['address'] = address;
+
+      final response = await http.patch(
+        Uri.parse('$baseUrl/rooms/$roomId'),
+        headers: _headers,
+        body: json.encode(body),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return RoomModel.fromJson(data['room']);
+      } else {
+        throw Exception('방 정보 수정 실패: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('방 정보 수정 중 오류 발생: $e');
+    }
+  }
+
+  Future<void> transferOwnership({
+    required String roomId,
+    required String newOwnerId,
+  }) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/rooms/$roomId/transfer-ownership'),
+        headers: _headers,
+        body: json.encode({'newOwnerId': newOwnerId}),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('방장 위임 실패: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('방장 위임 중 오류 발생: $e');
+    }
+  }
+
+  Future<void> kickMember({
+    required String roomId,
+    required String userId,
+  }) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/rooms/$roomId/members/$userId'),
+        headers: _headers,
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('멤버 내보내기 실패: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('멤버 내보내기 중 오류 발생: $e');
+    }
+  }
+
+  Future<void> leaveRoom() async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/rooms/leave'),
+        headers: _headers,
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('방 나가기 실패: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('방 나가기 중 오류 발생: $e');
+    }
+  }
+
   // ===== 카테고리 관련 =====
 
   Future<List<Map<String, dynamic>>> getChoreCategories() async {
@@ -461,6 +542,24 @@ class ApiService {
       }
     } catch (e) {
       throw Exception('일정 완료 처리 중 오류 발생: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> uncompleteChoreSchedule(String scheduleId) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/chores/schedules/$scheduleId/uncomplete'),
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['schedule'];
+      } else {
+        throw Exception('일정 완료 해제 실패: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('일정 완료 해제 중 오류 발생: $e');
     }
   }
 

@@ -8,94 +8,107 @@ const { ReservationError } = require('../utils/errors');
 
 const reservationScheduleService = {
   /**
-     * 특정 방의 주간 예약 일정 조회 (승인된 예약, 방문객 제외)
-     * 모든 예약 카테고리 포함하도록 수정
-     */
-    async getWeeklySchedules(roomId, weekStartDate, categoryId) {
-      const query = {
-        room: roomId,
-        status: 'approved',
-        specificDate: { $exists: false } // 방문객 예약 제외 (specificDate가 있는 것들)
-      };
+   * 예약 데이터에 RoomMember 정보 추가하는 헬퍼 함수
+   */
+  async addMemberInfoToReservations(roomId, reservations) {
+    return await Promise.all(
+      reservations.map(async (reservation) => {
+        const roomMember = await RoomMember.findOne({
+          roomId: roomId,
+          userId: reservation.reservedBy._id
+        }).select('nickname profileImageUrl');
 
-      // 주간 시작 날짜가 제공된 경우에만 필터 적용
-      if (weekStartDate) {
-        query.weekStartDate = new Date(weekStartDate);
-      }
+        return {
+          ...reservation.toObject(),
+          reservedBy: {
+            _id: reservation.reservedBy._id,
+            name: reservation.reservedBy.name,
+            nickname: roomMember?.nickname || reservation.reservedBy.name,
+            profileImageUrl: roomMember?.profileImageUrl || '/images/profile1.png'
+          }
+        };
+      })
+    );
+  },
 
-      // 특정 카테고리 필터 (선택사항)
-      if (categoryId) {
-        query.category = categoryId;
-      }
+  /**
+   * 특정 방의 주간 예약 일정 조회 (승인된 예약, 방문객 제외)
+   */
+  async getWeeklySchedules(roomId, weekStartDate, categoryId) {
+    const query = {
+      room: roomId,
+      status: 'approved',
+      specificDate: { $exists: false }
+    };
 
-      const schedules = await ReservationSchedule.find(query)
-        .populate({
-          path: 'category',
-          select: 'name icon isVisitor',
-          match: { isVisitor: false } // 방문객 카테고리 제외
-        })
-        .populate('reservedBy', 'nickname profileImageUrl')
-        .sort({ dayOfWeek: 1, startHour: 1 });
+    if (weekStartDate) {
+      query.weekStartDate = new Date(weekStartDate);
+    }
 
-      // populate 결과에서 category가 null인 항목 제거
-      return schedules.filter(schedule => schedule.category);
-    },
+    if (categoryId) {
+      query.category = categoryId;
+    }
 
-    /**
-     * 현재 주의 예약 일정 조회 (승인된 예약, 방문객 제외)
-     * 현재 주의 모든 예약 카테고리 반환
-     */
-    async getCurrentWeekSchedules(roomId, categoryId) {
+    const schedules = await ReservationSchedule.find(query)
+      .populate({
+        path: 'category',
+        select: 'name icon isVisitor',
+        match: { isVisitor: false }
+      })
+      .populate('reservedBy', 'name')
+      .sort({ dayOfWeek: 1, startHour: 1 });
+
+    const filteredSchedules = schedules.filter(schedule => schedule.category);
+    return await this.addMemberInfoToReservations(roomId, filteredSchedules);
+  },
+
+  /**
+   * 현재 주의 예약 일정 조회
+   */
+  async getCurrentWeekSchedules(roomId, categoryId) {
+    const today = new Date();
+    const weekStartDate = ReservationSchedule.getWeekStartDate(today);
+
+    return await this.getWeeklySchedules(roomId, weekStartDate, categoryId);
+  },
+
+  /**
+   * 특정 카테고리의 현재 주 예약만 조회
+   */
+  async getCategoryWeeklySchedules(roomId, categoryId) {
+    try {
+      console.log('getCategoryWeeklySchedules 호출:', { roomId, categoryId });
+
       const today = new Date();
       const weekStartDate = ReservationSchedule.getWeekStartDate(today);
 
-      return await this.getWeeklySchedules(roomId, weekStartDate, categoryId);
-    },
+      const query = {
+        room: roomId,
+        category: categoryId,
+        weekStartDate: weekStartDate,
+        status: 'approved',
+        specificDate: { $exists: false }
+      };
 
-    /**
-       * 특정 카테고리의 현재 주 예약만 조회 (새로 추가)
-       */
-      async getCategoryWeeklySchedules(roomId, categoryId) {
-        try {
-          console.log('getCategoryWeeklySchedules 호출:', { roomId, categoryId });
+      const schedules = await ReservationSchedule.find(query)
+        .populate('category', 'name icon isVisitor')
+        .populate('reservedBy', 'name')
+        .sort({ dayOfWeek: 1, startHour: 1 });
 
-          const today = new Date();
-          const weekStartDate = ReservationSchedule.getWeekStartDate(today);
-
-          console.log('현재 주 시작일:', weekStartDate);
-
-          const query = {
-            room: roomId,
-            category: categoryId,
-            weekStartDate: weekStartDate,
-            status: 'approved',
-            specificDate: { $exists: false }
-          };
-
-          console.log('검색 쿼리:', query);
-
-          const schedules = await ReservationSchedule.find(query)
-            .populate('category', 'name icon isVisitor')
-            .populate('reservedBy', 'nickname profileImageUrl')
-            .sort({ dayOfWeek: 1, startHour: 1 });
-
-          console.log('조회된 스케줄 수:', schedules.length);
-          console.log('조회된 스케줄:', schedules);
-
-          return schedules;
-        } catch (error) {
-          console.error('getCategoryWeeklySchedules 오류:', error);
-          throw error;
-        }
-      },
+      return await this.addMemberInfoToReservations(roomId, schedules);
+    } catch (error) {
+      console.error('getCategoryWeeklySchedules 오류:', error);
+      throw error;
+    }
+  },
 
   /**
-   * 방문객 예약 조회 (모든 상태 포함)
+   * 방문객 예약 조회
    */
   async getVisitorReservations(roomId) {
     const query = {
       room: roomId,
-      specificDate: { $exists: true } // 방문객 예약은 specificDate 필드가 있음
+      specificDate: { $exists: true }
     };
 
     const schedules = await ReservationSchedule.find(query)
@@ -104,19 +117,17 @@ const reservationScheduleService = {
         select: 'name icon isVisitor',
         match: { isVisitor: true }
       })
-      .populate('reservedBy', 'nickname profileImageUrl')
+      .populate('reservedBy', 'name')
       .sort({ specificDate: 1, startHour: 1 });
 
     const visitorReservations = schedules.filter(schedule => schedule.category);
-
-    // 방 총 멤버 수 조회
+    const reservationsWithMemberInfo = await this.addMemberInfoToReservations(roomId, visitorReservations);
     const totalMembers = await RoomMember.countDocuments({ roomId: roomId });
 
-    // 각 예약의 승인 정보 추가
     const reservationsWithApproval = await Promise.all(
-      visitorReservations.map(async (reservation) => {
+      reservationsWithMemberInfo.map(async (reservation) => {
         let approvalInfo = null;
-        let approvalStatus = 'approved'; // 기본값
+        let approvalStatus = 'approved';
 
         if (reservation.status === 'pending') {
           approvalInfo = await ReservationApproval.findOne({
@@ -125,7 +136,7 @@ const reservationScheduleService = {
 
           if (approvalInfo) {
             const approvedCount = approvalInfo.approvedBy.length;
-            const requiredApprovals = totalMembers - 1; // 예약자 제외
+            const requiredApprovals = totalMembers - 1;
 
             if (approvedCount >= requiredApprovals) {
               approvalStatus = 'fully_approved';
@@ -140,7 +151,7 @@ const reservationScheduleService = {
         }
 
         return {
-          ...reservation.toObject(),
+          ...reservation,
           approval: approvalInfo,
           approvalStatus,
           totalMembers,
@@ -154,7 +165,7 @@ const reservationScheduleService = {
   },
 
   /**
-   * 승인 대기 중인 예약 목록 조회 (방문객만)
+   * 승인 대기 중인 예약 목록 조회
    */
   async getPendingReservations(roomId, userId) {
     const pendingReservations = await ReservationSchedule.find({
@@ -166,7 +177,7 @@ const reservationScheduleService = {
       select: 'name icon isVisitor',
       match: { isVisitor: true }
     })
-    .populate('reservedBy', 'nickname profileImageUrl')
+    .populate('reservedBy', 'name')
     .populate({
       path: 'room',
       select: 'name'
@@ -174,9 +185,10 @@ const reservationScheduleService = {
     .sort({ createdAt: -1 });
 
     const visitorReservations = pendingReservations.filter(reservation => reservation.category);
+    const reservationsWithMemberInfo = await this.addMemberInfoToReservations(roomId, visitorReservations);
 
     const reservationsWithApproval = await Promise.all(
-      visitorReservations.map(async (reservation) => {
+      reservationsWithMemberInfo.map(async (reservation) => {
         const approval = await ReservationApproval.findOne({
           reservation: reservation._id
         }).populate('approvedBy.user', 'nickname');
@@ -186,7 +198,7 @@ const reservationScheduleService = {
         ) || false;
 
         return {
-          ...reservation.toObject(),
+          ...reservation,
           approval: approval || null,
           hasUserApproved
         };
@@ -197,7 +209,7 @@ const reservationScheduleService = {
   },
 
   /**
-   * 예약 일정 생성 - 새로 추가된 함수
+   * 예약 일정 생성
    */
   async createSchedule(scheduleData, userId) {
     console.log('예약 생성 요청 데이터:', scheduleData);
@@ -232,7 +244,6 @@ const reservationScheduleService = {
         throw new ReservationError('방문객 예약은 특정 날짜가 필요합니다.', 400);
       }
 
-      // 과거 날짜 예약 방지
       const reservationDate = new Date(scheduleData.specificDate);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -241,11 +252,11 @@ const reservationScheduleService = {
         throw new ReservationError('과거 날짜는 예약할 수 없습니다.', 400);
       }
 
-      // 방문객 예약 시간 겹침 확인
+      // 시간 겹침 확인
       const conflictingReservation = await ReservationSchedule.findOne({
         room: scheduleData.room,
         specificDate: reservationDate,
-        status: 'approved', // 승인된 예약만 체크
+        status: 'approved',
         $or: [
           {
             startHour: { $lt: scheduleData.endHour },
@@ -261,11 +272,11 @@ const reservationScheduleService = {
       newSchedule = new ReservationSchedule({
         room: scheduleData.room,
         category: scheduleData.category,
-        reservedBy: userId,
+        reservedBy: userId, // userId를 직접 저장
         specificDate: reservationDate,
         startHour: scheduleData.startHour,
         endHour: scheduleData.endHour,
-        status: 'pending' // 방문객은 항상 승인 필요
+        status: 'pending'
       });
 
     } else {
@@ -276,7 +287,7 @@ const reservationScheduleService = {
 
       const weekStartDate = ReservationSchedule.getWeekStartDate(new Date());
 
-      // 시간 겹침 확인 (승인된 예약만 체크)
+      // 시간 겹침 확인
       const conflictingReservation = await ReservationSchedule.findOne({
         room: scheduleData.room,
         category: scheduleData.category,
@@ -298,13 +309,13 @@ const reservationScheduleService = {
       newSchedule = new ReservationSchedule({
         room: scheduleData.room,
         category: scheduleData.category,
-        reservedBy: userId,
+        reservedBy: userId, // userId를 직접 저장
         dayOfWeek: scheduleData.dayOfWeek,
         startHour: scheduleData.startHour,
         endHour: scheduleData.endHour,
         weekStartDate: weekStartDate,
         isRecurring: scheduleData.isRecurring || false,
-        status: 'approved' // 일반 카테고리는 즉시 승인
+        status: 'approved'
       });
     }
 
@@ -333,7 +344,6 @@ const reservationScheduleService = {
    * 매주 반복 예약 생성
    */
   async createRecurringReservations(originalSchedule) {
-    // 최대 12주(3개월) 미리 생성
     const maxWeeks = 12;
     const createdReservations = [];
 
@@ -341,7 +351,6 @@ const reservationScheduleService = {
       const nextWeekStart = new Date(originalSchedule.weekStartDate);
       nextWeekStart.setDate(nextWeekStart.getDate() + (7 * i));
 
-      // 이미 해당 주에 예약이 있는지 확인
       const existingReservation = await ReservationSchedule.findOne({
         room: originalSchedule.room,
         category: originalSchedule.category,
@@ -352,11 +361,8 @@ const reservationScheduleService = {
         endHour: originalSchedule.endHour
       });
 
-      if (existingReservation) {
-        continue; // 이미 예약이 있으면 스킵
-      }
+      if (existingReservation) continue;
 
-      // 시간 겹침 확인
       const conflictingReservation = await ReservationSchedule.findOne({
         room: originalSchedule.room,
         category: originalSchedule.category,
@@ -371,11 +377,8 @@ const reservationScheduleService = {
         ]
       });
 
-      if (conflictingReservation) {
-        continue; // 겹치는 예약이 있으면 스킵
-      }
+      if (conflictingReservation) continue;
 
-      // 새로운 반복 예약 생성
       const recurringReservation = new ReservationSchedule({
         room: originalSchedule.room,
         category: originalSchedule.category,
@@ -406,12 +409,10 @@ const reservationScheduleService = {
       throw new ReservationError('예약을 찾을 수 없습니다.', 404);
     }
 
-    // 방문객 예약만 승인 가능
     if (!reservation.category.isVisitor) {
       throw new ReservationError('방문객 예약만 승인할 수 있습니다.', 400);
     }
 
-    // 방 멤버인지 확인
     const roomMember = await RoomMember.findOne({
       roomId: reservation.room,
       userId: userId
@@ -421,12 +422,11 @@ const reservationScheduleService = {
       throw new ReservationError('방 멤버만 승인할 수 있습니다.', 403);
     }
 
-    // 예약자 본인은 승인할 수 없음
+    // 예약자 본인은 승인할 수 없음 - userId로 직접 비교
     if (reservation.reservedBy.toString() === userId.toString()) {
       throw new ReservationError('본인의 예약은 승인할 수 없습니다.', 400);
     }
 
-    // 이미 승인된 예약인지 확인
     if (reservation.status === 'approved') {
       throw new ReservationError('이미 승인된 예약입니다.', 400);
     }
@@ -436,7 +436,6 @@ const reservationScheduleService = {
     });
 
     if (!approval) {
-      // 승인 정보가 없으면 생성
       const totalMembers = await RoomMember.countDocuments({ roomId: reservation.room });
       approval = await ReservationApproval.create({
         reservation: reservationId,
@@ -454,17 +453,13 @@ const reservationScheduleService = {
       throw new ReservationError('이미 승인한 예약입니다.', 400);
     }
 
-    // 승인 추가
     approval.approvedBy.push({ user: userId });
 
-    // 모든 멤버(예약자 제외)가 승인했는지 확인
-    const requiredApprovals = approval.totalMembersCount - 1; // 예약자 제외
+    const requiredApprovals = approval.totalMembersCount - 1;
     const currentApprovals = approval.approvedBy.length;
 
     if (currentApprovals >= requiredApprovals) {
-      // 모든 멤버가 승인했으면 최종 승인
-
-      // 시간 겹침 재확인 (최종 승인 시점에서)
+      // 시간 겹침 재확인
       const conflictingReservation = await ReservationSchedule.findOne({
         _id: { $ne: reservationId },
         room: reservation.room,
@@ -482,7 +477,6 @@ const reservationScheduleService = {
         throw new ReservationError('승인 시점에 해당 시간에 이미 다른 예약이 있습니다.', 409);
       }
 
-      // 예약 상태를 승인으로 변경
       reservation.status = 'approved';
       await reservation.save();
 
@@ -512,12 +506,12 @@ const reservationScheduleService = {
       throw new ReservationError('예약을 찾을 수 없습니다.', 404);
     }
 
-    // 예약자만 삭제 가능
+    // 예약자 확인 - userId로 직접 비교
     if (schedule.reservedBy.toString() !== userId.toString()) {
       throw new ReservationError('예약자만 삭제할 수 있습니다.', 403);
     }
 
-    // 방문객 예약은 당일 이후만 삭제 가능, 일반 예약은 현재 주만 삭제 가능
+    // 시간 제한 확인
     if (schedule.category.isVisitor) {
       const today = new Date();
       const reservationDate = new Date(schedule.specificDate);
@@ -530,9 +524,8 @@ const reservationScheduleService = {
       }
     }
 
-    // 매주 반복 예약인 경우 미래 예약들도 함께 삭제할지 확인
+    // 매주 반복 예약인 경우 미래 예약들도 함께 삭제
     if (schedule.isRecurring && !schedule.category.isVisitor) {
-      // 현재 및 미래 반복 예약들 삭제
       await ReservationSchedule.deleteMany({
         room: schedule.room,
         category: schedule.category,
